@@ -145,6 +145,63 @@ const paginatedRows = computed(() => {
   return allRows.value.slice(start, start + pageSize.value)
 })
 
+// ── Multi-sélection ──────────────────────────────────────────────────────────
+
+const selectedIds = ref<Set<string>>(new Set())
+
+watch([activeFolderId, activeCoffreId, currentPage, pageSize], () => {
+  selectedIds.value = new Set()
+})
+
+const pageRowIds = computed(() => paginatedRows.value.map(r => r.item.id))
+
+const isAllPageSelected = computed(() =>
+  pageRowIds.value.length > 0 && pageRowIds.value.every(id => selectedIds.value.has(id)),
+)
+
+const isIndeterminate = computed(() =>
+  pageRowIds.value.some(id => selectedIds.value.has(id)) && !isAllPageSelected.value,
+)
+
+function toggleSelectAll() {
+  selectedIds.value = isAllPageSelected.value ? new Set() : new Set(pageRowIds.value)
+}
+
+function toggleSelect(id: string) {
+  const s = new Set(selectedIds.value)
+  if (s.has(id)) s.delete(id)
+  else s.add(id)
+  selectedIds.value = s
+}
+
+function handleDeleteSelected() {
+  const ids = [...selectedIds.value]
+  const count = ids.length
+  askConfirm(
+    `Supprimer ${count} élément${count > 1 ? 's' : ''} ?`,
+    async () => {
+      for (const id of ids) {
+        if (folders.value.some(f => f.id === id)) {
+          const descendantIds = getDescendantFolderIds(id)
+          const affectedFolderIds = new Set([id, ...descendantIds])
+          const affectedEntries = entries.value.filter(e => e.folderId && affectedFolderIds.has(e.folderId))
+          await Promise.all([
+            deleteFolder(id),
+            ...descendantIds.map(fid => deleteFolder(fid, id)),
+            ...affectedEntries.map(e => deleteEntry(e.id, id)),
+          ])
+          folders.value = folders.value.filter(f => !affectedFolderIds.has(f.id))
+          entries.value = entries.value.filter(e => !affectedEntries.some(ae => ae.id === e.id))
+        } else if (entries.value.some(e => e.id === id)) {
+          await deleteEntry(id)
+          entries.value = entries.value.filter(e => e.id !== id)
+        }
+      }
+      selectedIds.value = new Set()
+    },
+  )
+}
+
 // Entrées totales dans un coffre (pour le compteur)
 const coffreEntryCount = computed(() => {
   const counts: Record<string, number> = {}
@@ -350,7 +407,7 @@ onMounted(loadAll)
 </script>
 
 <template>
-  <div class="min-h-screen bg-bg text-text flex flex-col">
+  <div class="h-screen bg-bg text-text flex flex-col overflow-hidden">
 
     <!-- Header -->
     <header class="vault-header sticky top-0 z-20 border-b border-border px-6 py-3.5 flex items-center justify-between shrink-0">
@@ -376,7 +433,7 @@ onMounted(loadAll)
     <div class="flex flex-1 overflow-hidden">
 
       <!-- Sidebar -->
-      <aside class="sidebar w-60 shrink-0 border-r border-border flex flex-col overflow-y-auto">
+      <aside class="sidebar w-60 shrink-0 border-r border-border flex flex-col overflow-y-auto custom-scroll">
 
         <!-- Nouveau coffre -->
         <div class="p-3 pb-2 border-b border-border">
@@ -570,17 +627,28 @@ onMounted(loadAll)
           <div class="flex-1 flex flex-col min-h-0 gap-3">
 
           <!-- Tableau explorateur -->
-          <div v-if="!isLoading && (activeFolderId || currentFolders.length > 0 || filteredEntries.length > 0)" class="vault-table rounded-xl overflow-hidden shrink-0">
+          <div v-if="!isLoading && (activeFolderId || currentFolders.length > 0 || filteredEntries.length > 0)" class="flex-1 overflow-auto min-h-0 custom-scroll">
+          <div class="vault-table rounded-xl overflow-hidden">
             <table class="w-full text-sm table-fixed">
               <colgroup>
-                <col class="w-[28%]" />
-                <col class="w-[22%]" />
-                <col class="w-[20%]" />
-                <col class="w-[22%]" />
+                <col class="w-[4%]" />
+                <col class="w-[24%]" />
+                <col class="w-[21%]" />
+                <col class="w-[18%]" />
+                <col class="w-[21%]" />
                 <col class="w-[8%]" />
               </colgroup>
               <thead>
                 <tr class="table-head border-b border-border text-left">
+                  <th class="pl-3 py-2">
+                    <input
+                      type="checkbox"
+                      class="cb"
+                      :checked="isAllPageSelected"
+                      :ref="(el) => { if (el) (el as HTMLInputElement).indeterminate = isIndeterminate }"
+                      @change="toggleSelectAll"
+                    />
+                  </th>
                   <th class="pl-[60px] pr-4 py-2 text-xs font-medium text-text-muted uppercase tracking-wider">Nom</th>
                   <th class="px-4 py-2 text-xs font-medium text-text-muted uppercase tracking-wider">Identifiant</th>
                   <th class="px-4 py-2 text-xs font-medium text-text-muted uppercase tracking-wider">Mot de passe</th>
@@ -591,7 +659,7 @@ onMounted(loadAll)
               <tbody>
                 <!-- Ligne retour arrière -->
                 <tr v-if="activeFolderId" class="table-row back-row border-b border-border cursor-pointer transition-colors" @click="goBack">
-                  <td colspan="5" class="px-4 py-3">
+                  <td colspan="6" class="px-4 py-3">
                     <div class="flex items-center gap-2 text-text-muted">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 shrink-0">
                         <path d="m15 18-6-6 6-6"/>
@@ -605,7 +673,10 @@ onMounted(loadAll)
                 <template v-for="row in paginatedRows" :key="row.kind + '-' + row.item.id">
 
                   <!-- Ligne dossier -->
-                  <tr v-if="row.kind === 'folder'" class="table-row folder-row border-b border-border cursor-pointer transition-colors" @click="activeFolderId = row.item.id">
+                  <tr v-if="row.kind === 'folder'" class="table-row folder-row border-b border-border cursor-pointer transition-colors" :class="selectedIds.has(row.item.id) ? 'row-selected' : ''" @click="activeFolderId = row.item.id">
+                    <td class="pl-3 py-2.5" @click.stop>
+                      <input type="checkbox" class="cb" :checked="selectedIds.has(row.item.id)" @change="toggleSelect(row.item.id)" />
+                    </td>
                     <td colspan="4" class="px-4 py-2.5">
                       <div class="flex items-center gap-3">
                         <div class="folder-avatar w-8 h-8 rounded-lg flex items-center justify-center shrink-0">
@@ -633,7 +704,10 @@ onMounted(loadAll)
                   </tr>
 
                   <!-- Ligne mot de passe -->
-                  <tr v-else class="table-row border-b border-border last:border-0 transition-colors">
+                  <tr v-else class="table-row border-b border-border last:border-0 transition-colors" :class="selectedIds.has(row.item.id) ? 'row-selected' : ''">
+                    <td class="pl-3 py-2.5">
+                      <input type="checkbox" class="cb" :checked="selectedIds.has(row.item.id)" @change="toggleSelect(row.item.id)" />
+                    </td>
                     <td class="px-4 py-2.5">
                       <div class="flex items-center gap-3">
                         <div class="entry-avatar w-8 h-8 rounded-lg flex items-center justify-center shrink-0">
@@ -681,14 +755,28 @@ onMounted(loadAll)
               </tbody>
             </table>
           </div>
+          </div><!-- /scroll container -->
 
-          <!-- Spacer : pousse la pagination en bas -->
-          <div class="flex-1" />
 
           <!-- Pagination -->
           <div v-if="!isLoading && allRows.length > 0" class="grid grid-cols-3 items-center px-1 shrink-0">
-            <!-- Gauche : total -->
-            <span class="text-xs text-text-muted">{{ allRows.length }} élément{{ allRows.length > 1 ? 's' : '' }}</span>
+            <!-- Gauche : total ou sélection -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-text-muted">
+                <template v-if="selectedIds.size > 0">{{ selectedIds.size }} sélectionné{{ selectedIds.size > 1 ? 's' : '' }}</template>
+                <template v-else>{{ allRows.length }} élément{{ allRows.length > 1 ? 's' : '' }}</template>
+              </span>
+              <button
+                v-if="selectedIds.size > 0"
+                class="delete-selection-btn flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium"
+                @click="handleDeleteSelected"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+                  <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                </svg>
+                Supprimer
+              </button>
+            </div>
             <!-- Centre : navigation -->
             <div class="flex items-center justify-center gap-2">
               <button
@@ -943,4 +1031,88 @@ tr:hover .copy-btn { opacity:1; }
   transition: border-color 0.15s, color 0.15s;
 }
 .page-size-select:hover, .page-size-select:focus { border-color: rgba(167,139,250,0.3); color: var(--color-text); }
+
+/* Checkboxes */
+.cb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.25rem;
+  border: 1.5px solid rgba(167,139,250,0.3);
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s, border-color 0.15s;
+  display: block;
+  flex-shrink: 0;
+}
+.cb:hover { border-color: rgba(167,139,250,0.6); }
+.cb:checked { background: #A78BFA; border-color: #A78BFA; }
+.cb:checked::after {
+  content: '';
+  display: block;
+  width: 0.35rem;
+  height: 0.6rem;
+  border: 2px solid white;
+  border-top: none;
+  border-left: none;
+  transform: rotate(45deg) translate(1px, -1px);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin-top: -0.38rem;
+  margin-left: -0.18rem;
+}
+.cb:indeterminate { background: rgba(167,139,250,0.4); border-color: #A78BFA; }
+.cb:indeterminate::after {
+  content: '';
+  display: block;
+  width: 0.5rem;
+  height: 2px;
+  background: white;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Ligne sélectionnée */
+.row-selected { background: rgba(167,139,250,0.06) !important; }
+
+/* Bouton supprimer sélection */
+.delete-selection-btn {
+  background: rgba(248,113,113,0.1);
+  border: 1px solid rgba(248,113,113,0.25);
+  color: #f87171;
+  transition: background 0.15s, border-color 0.15s;
+}
+.delete-selection-btn:hover { background: rgba(248,113,113,0.18); border-color: rgba(248,113,113,0.4); }
+
+/* Scrollbar custom — accent violet sur fond sombre */
+.custom-scroll {
+  scrollbar-width: thin;                         /* Firefox */
+  scrollbar-color: rgba(167,139,250,0.35) transparent;
+}
+.custom-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.custom-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scroll::-webkit-scrollbar-thumb {
+  background: rgba(167,139,250,0.25);
+  border: 2px solid transparent;                 /* marge autour du pouce */
+  border-radius: 999px;
+  background-clip: padding-box;                  /* respecte la bordure transparente */
+  transition: background 0.15s;
+}
+.custom-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(167,139,250,0.5);
+  background-clip: padding-box;
+}
+.custom-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
 </style>
