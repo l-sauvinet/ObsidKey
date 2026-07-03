@@ -11,4 +11,10 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    // 5173 est occupé en permanence par Docker Desktop sur cette machine, et 5174/5175 sont
+    // réservés au back office (obsidkey_backoffice) — port dédié pour éviter toute collision.
+    port: 5180,
+    strictPort: true,
+  },
 })

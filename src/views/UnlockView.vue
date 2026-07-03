@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { auth } from '@/services/firebase'
-import { unlockWithPassword, logOut } from '@/services/auth'
+import { unlockWithPassword, logOut, VaultKeyMismatchError } from '@/services/auth'
 
 const router = useRouter()
 
@@ -18,8 +18,12 @@ async function handleUnlock() {
   try {
     await unlockWithPassword(masterPassword.value)
     router.push({ name: 'vault' })
-  } catch {
-    errorMessage.value = 'Mot de passe maître incorrect.'
+  } catch (err) {
+    if (err instanceof VaultKeyMismatchError) {
+      errorMessage.value = "Ce mot de passe ne correspond pas au coffre de ce compte. Demande à ton administrateur de le réinitialiser."
+    } else {
+      errorMessage.value = 'Mot de passe maître incorrect.'
+    }
   } finally {
     isLoading.value = false
   }

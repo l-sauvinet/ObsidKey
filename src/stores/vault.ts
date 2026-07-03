@@ -6,6 +6,11 @@ const LOCK_TIMEOUT_MS = 4 * 60 * 60 * 1000 // 4 heures
 
 interface VaultState {
   encryptionKey: CryptoKey | null
+  // Octets bruts de la VK, gardés en mémoire pour pouvoir la ré-envelopper (changement de mot
+  // de passe, configuration de la récupération) sans changer la CryptoKey non-extractable
+  // utilisée pour chiffrer/déchiffrer les entrées. Déjà présents en base64 dans sessionStorage
+  // ci-dessous, donc ça n'ajoute pas de surface d'exposition supplémentaire.
+  rawKeyMaterial: ArrayBuffer | null
   isUnlocked: boolean
 }
 
@@ -16,17 +21,20 @@ async function importRawKey(raw: ArrayBuffer): Promise<CryptoKey> {
 export const useVaultStore = defineStore('vault', {
   state: (): VaultState => ({
     encryptionKey: null,
+    rawKeyMaterial: null,
     isUnlocked: false,
   }),
   actions: {
     async unlock(rawKeyMaterial: ArrayBuffer) {
       this.encryptionKey = await importRawKey(rawKeyMaterial)
+      this.rawKeyMaterial = rawKeyMaterial
       this.isUnlocked = true
       sessionStorage.setItem(SESSION_KEY, bufToBase64(rawKeyMaterial))
       sessionStorage.setItem(SESSION_TS_KEY, Date.now().toString())
     },
     lock() {
       this.encryptionKey = null
+      this.rawKeyMaterial = null
       this.isUnlocked = false
       sessionStorage.removeItem(SESSION_KEY)
       sessionStorage.removeItem(SESSION_TS_KEY)
@@ -45,6 +53,7 @@ export const useVaultStore = defineStore('vault', {
       try {
         const keyBytes = base64ToBuf(raw)
         this.encryptionKey = await importRawKey(keyBytes)
+        this.rawKeyMaterial = keyBytes
         this.isUnlocked = true
       } catch {
         this.lock()

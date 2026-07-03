@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { signIn } from '@/services/auth'
+import { signIn, VaultKeyMismatchError } from '@/services/auth'
 
 const router = useRouter()
 
@@ -17,7 +17,11 @@ async function handleSubmit() {
     await signIn(email.value, masterPassword.value)
     router.push({ name: 'vault' })
   } catch (err: any) {
-    errorMessage.value = translateError(err?.code)
+    if (err instanceof VaultKeyMismatchError) {
+      errorMessage.value = "Ce mot de passe ne correspond pas au coffre de ce compte. Demande à ton administrateur de le réinitialiser."
+    } else {
+      errorMessage.value = translateError(err?.code)
+    }
   } finally {
     isLoading.value = false
   }

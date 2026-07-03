@@ -1,34 +1,15 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import Modal from '@/components/ui/Modal.vue'
 import PasswordGeneratorModal from '@/components/PasswordGeneratorModal.vue'
 import { addEntry, type VaultEntryPlain } from '@/services/vaultEntries'
-import type { VaultCoffre } from '@/services/vaultCoffres'
-import type { VaultFolder } from '@/services/vaultFolders'
 
 const props = defineProps<{
-  coffres: VaultCoffre[]
-  folders: VaultFolder[]
   defaultCoffreId: string
   defaultFolderId?: string
 }>()
 
 const emit = defineEmits<{ close: []; created: [] }>()
-
-const selectedCoffreId = props.defaultCoffreId
-const selectedFolderId = ref<string | undefined>(props.defaultFolderId)
-
-type FolderOption = VaultFolder & { depth: number }
-
-const folderOptions = computed((): FolderOption[] => {
-  const coffreFolders = props.folders.filter(f => f.coffreId === selectedCoffreId)
-  function build(parentId: string | undefined, depth: number): FolderOption[] {
-    return coffreFolders
-      .filter(f => f.parentId === parentId)
-      .flatMap(f => [{ ...f, depth }, ...build(f.id, depth + 1)])
-  }
-  return build(undefined, 0)
-})
 
 const form = ref<Omit<VaultEntryPlain, 'coffreId' | 'folderId'>>({
   title: '',
@@ -47,10 +28,6 @@ function useGeneratedPassword(pwd: string) {
   showGenerator.value = false
 }
 
-function folderLabel(f: FolderOption): string {
-  return '—'.repeat(f.depth) + (f.depth > 0 ? ' ' : '') + f.name
-}
-
 async function handleSubmit() {
   errorMessage.value = ''
   isSaving.value = true
@@ -61,8 +38,8 @@ async function handleSubmit() {
       description: form.value.description || undefined,
       url: form.value.url || undefined,
       username: form.value.username || undefined,
-      coffreId: selectedCoffreId,
-      folderId: selectedFolderId.value,
+      coffreId: props.defaultCoffreId,
+      folderId: props.defaultFolderId,
     })
     emit('created')
     emit('close')
@@ -83,15 +60,6 @@ async function handleSubmit() {
       <div>
         <label for="title" class="block text-xs font-medium text-text-muted uppercase tracking-wider mb-1.5">Titre <span class="text-danger">*</span></label>
         <input id="title" v-model="form.title" required placeholder="Ex : Gmail" class="modal-input w-full px-3 py-2.5 rounded-lg text-sm text-text" />
-      </div>
-
-      <!-- Dossier (optionnel) -->
-      <div v-if="folderOptions.length > 0">
-        <label for="folder" class="block text-xs font-medium text-text-muted uppercase tracking-wider mb-1.5">Dossier <span class="normal-case text-text-muted font-normal">(optionnel)</span></label>
-        <select id="folder" v-model="selectedFolderId" class="modal-input modal-select w-full px-3 py-2.5 rounded-lg text-sm text-text">
-          <option :value="undefined">— Racine du coffre —</option>
-          <option v-for="f in folderOptions" :key="f.id" :value="f.id">{{ folderLabel(f) }}</option>
-        </select>
       </div>
 
       <!-- Description -->
@@ -153,15 +121,6 @@ async function handleSubmit() {
   border-color: rgba(167, 139, 250, 0.5);
   box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.08);
 }
-.modal-select {
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237C8A99' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 0.75rem center;
-  background-size: 1rem;
-  padding-right: 2.5rem;
-}
-.modal-select option { background: #12181F; color: var(--color-text); }
 .save-btn {
   background: linear-gradient(135deg, #A78BFA 0%, #7C3AED 100%);
   color: white;

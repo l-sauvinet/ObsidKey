@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Key } from '@lucide/vue'
 import { logOut } from '@/services/auth'
@@ -96,33 +96,101 @@ function goBack() {
   activeFolderId.value = cur?.parentId ?? null
 }
 
-// Dossiers enfants directs de l'emplacement actif
+// Dossiers enfants directs de l'emplacement actif — la recherche n'affecte plus cet affichage,
+// elle propose des résultats séparés sous la barre (voir searchResults plus bas).
 const currentFolders = computed(() => {
   if (!activeCoffreId.value) return []
   return folders.value
-    .filter(f =>
-      f.coffreId === activeCoffreId.value &&
-      f.parentId === (activeFolderId.value ?? undefined),
-    )
+    .filter(f => f.coffreId === activeCoffreId.value && f.parentId === (activeFolderId.value ?? undefined))
     .sort((a, b) => a.name.localeCompare(b.name))
 })
 
 const filteredEntries = computed(() => {
   if (!activeCoffreId.value) return []
-  let result = entries.value.filter(e =>
-    e.coffreId === activeCoffreId.value &&
-    (activeFolderId.value ? e.folderId === activeFolderId.value : !e.folderId),
-  )
-  const q = search.value.trim().toLowerCase()
-  if (q) {
-    result = result.filter(e =>
-      e.title.toLowerCase().includes(q) ||
-      (e.username ?? '').toLowerCase().includes(q) ||
-      (e.url ?? '').toLowerCase().includes(q),
-    )
-  }
-  return result.sort((a, b) => a.title.localeCompare(b.title))
+  return entries.value
+    .filter(e => e.coffreId === activeCoffreId.value && (activeFolderId.value ? e.folderId === activeFolderId.value : !e.folderId))
+    .sort((a, b) => a.title.localeCompare(b.title))
 })
+
+// ── Suggestions de recherche ─────────────────────────────────────────────────
+// N'affecte pas l'affichage courant : propose des résultats (entrées ET dossiers) sous la
+// barre, et clique dessus pour se déplacer à l'endroit réel (comme une navigation manuelle).
+
+const searchDropdownOpen = ref(false)
+const searchContainerEl = ref<HTMLElement | null>(null)
+const highlightedId = ref<string | null>(null)
+
+function handleSearchFocus() {
+  searchDropdownOpen.value = true
+}
+
+function handleClickOutsideSearch(e: MouseEvent) {
+  if (searchContainerEl.value && !searchContainerEl.value.contains(e.target as Node)) {
+    searchDropdownOpen.value = false
+  }
+}
+
+onMounted(() => document.addEventListener('mousedown', handleClickOutsideSearch))
+onUnmounted(() => document.removeEventListener('mousedown', handleClickOutsideSearch))
+
+type SearchResult =
+  | { kind: 'entry'; id: string; entry: VaultEntry; locationName: string }
+  | { kind: 'folder'; id: string; folder: VaultFolder; locationName: string }
+
+const searchResults = computed((): SearchResult[] => {
+  const q = search.value.trim().toLowerCase()
+  if (!q || !activeCoffreId.value) return []
+
+  const folderMatches: SearchResult[] = folders.value
+    .filter(f => f.coffreId === activeCoffreId.value && f.name.toLowerCase().includes(q))
+    .map(folder => ({
+      kind: 'folder' as const,
+      id: folder.id,
+      folder,
+      locationName: folder.parentId ? (folders.value.find(f => f.id === folder.parentId)?.name ?? '?') : 'Racine',
+    }))
+
+  const entryMatches: SearchResult[] = entries.value
+    .filter(e =>
+      e.coffreId === activeCoffreId.value &&
+      (e.title.toLowerCase().includes(q) ||
+        (e.username ?? '').toLowerCase().includes(q) ||
+        (e.url ?? '').toLowerCase().includes(q)),
+    )
+    .map(entry => ({
+      kind: 'entry' as const,
+      id: entry.id,
+      entry,
+      locationName: entry.folderId ? (folders.value.find(f => f.id === entry.folderId)?.name ?? '?') : 'Racine',
+    }))
+
+  return [...folderMatches, ...entryMatches].slice(0, 8)
+})
+
+const showSearchResults = computed(() => searchDropdownOpen.value && search.value.trim().length > 0)
+
+async function goToSearchResult(result: SearchResult) {
+  const targetFolderId = result.kind === 'folder' ? (result.folder.parentId ?? null) : (result.entry.folderId ?? null)
+  const attr = result.kind === 'folder' ? 'data-folder-id' : 'data-entry-id'
+
+  activeFolderId.value = targetFolderId
+  search.value = ''
+  searchDropdownOpen.value = false
+
+  await nextTick()
+  const idx = allRows.value.findIndex(r => r.kind === result.kind && r.item.id === result.id)
+  if (idx >= 0) currentPage.value = Math.floor(idx / pageSize.value) + 1
+
+  highlightedId.value = result.id
+
+  await nextTick()
+  document.querySelector(`tr[${attr}="${result.id}"]`)
+    ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
+function clearHighlight(id: string) {
+  if (highlightedId.value === id) highlightedId.value = null
+}
 
 // ── Pagination ───────────────────────────────────────────────────────────────
 
@@ -131,7 +199,7 @@ type TableRow = { kind: 'folder'; item: VaultFolder } | { kind: 'entry'; item: V
 const pageSize = ref<10 | 25 | 50>(10)
 const currentPage = ref(1)
 
-watch([activeFolderId, activeCoffreId, search, pageSize], () => { currentPage.value = 1 })
+watch([activeFolderId, activeCoffreId, pageSize], () => { currentPage.value = 1 })
 
 const allRows = computed((): TableRow[] => [
   ...currentFolders.value.map(item => ({ kind: 'folder' as const, item })),
@@ -411,9 +479,12 @@ onMounted(loadAll)
 
     <!-- Header -->
     <header class="vault-header sticky top-0 z-20 border-b border-border px-6 py-3.5 flex items-center justify-between shrink-0">
-      <h1 class="font-[family-name:var(--font-display)] text-lg font-bold">
-        Obsid<span class="text-accent">key</span>
-      </h1>
+      <div class="flex items-center gap-2">
+        <img src="/src/assets/logo-app.svg" alt="logo-app" class="h-9 w-auto" />
+        <h1 class="font-[family-name:var(--font-display)] text-xl font-bold leading-none">
+          Obsid<span class="text-accent">Key</span>
+        </h1>
+      </div>
       <div class="flex items-center gap-1">
         <button class="header-btn text-text-muted hover:text-accent" @click="handleLock">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 shrink-0">
@@ -560,11 +631,37 @@ onMounted(loadAll)
 
           <!-- Toolbar -->
           <div class="flex items-center gap-3">
-            <div class="relative flex-1">
+            <div ref="searchContainerEl" class="relative flex-1">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none">
                 <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
               </svg>
-              <input v-model="search" type="search" placeholder="Rechercher…" class="search-input w-full pl-9 pr-4 py-2.5 rounded-lg text-sm text-text" />
+              <input
+                v-model="search"
+                type="search"
+                placeholder="Rechercher…"
+                class="search-input w-full pl-9 pr-4 py-2.5 rounded-lg text-sm text-text"
+                @focus="handleSearchFocus"
+              />
+              <div v-if="showSearchResults" class="search-results absolute left-0 right-0 top-full mt-2 rounded-xl overflow-hidden z-30 max-h-80 overflow-y-auto custom-scroll">
+                <button
+                  v-for="result in searchResults"
+                  :key="result.kind + '-' + result.id"
+                  class="search-result-item w-full flex items-center gap-3 px-4 py-2.5 text-left"
+                  @click="goToSearchResult(result)"
+                >
+                  <div v-if="result.kind === 'folder'" class="folder-avatar w-8 h-8 rounded-lg flex items-center justify-center shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+                  </div>
+                  <div v-else class="entry-avatar w-8 h-8 rounded-lg flex items-center justify-center shrink-0">
+                    <Key :size="16" />
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <p class="font-medium text-text truncate text-sm">{{ result.kind === 'folder' ? result.folder.name : result.entry.title }}</p>
+                    <p class="text-text-muted text-xs truncate">{{ result.locationName }}</p>
+                  </div>
+                </button>
+                <p v-if="searchResults.length === 0" class="px-4 py-3 text-text-muted text-sm">Aucun résultat</p>
+              </div>
             </div>
 
             <!-- Dropdown Ajouter -->
@@ -673,7 +770,14 @@ onMounted(loadAll)
                 <template v-for="row in paginatedRows" :key="row.kind + '-' + row.item.id">
 
                   <!-- Ligne dossier -->
-                  <tr v-if="row.kind === 'folder'" class="table-row folder-row border-b border-border cursor-pointer transition-colors" :class="selectedIds.has(row.item.id) ? 'row-selected' : ''" @click="activeFolderId = row.item.id">
+                  <tr
+                    v-if="row.kind === 'folder'"
+                    class="table-row folder-row border-b border-border cursor-pointer transition-colors"
+                    :class="[selectedIds.has(row.item.id) ? 'row-selected' : '', highlightedId === row.item.id ? 'row-highlighted' : '']"
+                    :data-folder-id="row.item.id"
+                    @click="activeFolderId = row.item.id"
+                    @mouseenter="clearHighlight(row.item.id)"
+                  >
                     <td class="pl-3 py-2.5" @click.stop>
                       <input type="checkbox" class="cb" :checked="selectedIds.has(row.item.id)" @change="toggleSelect(row.item.id)" />
                     </td>
@@ -704,7 +808,13 @@ onMounted(loadAll)
                   </tr>
 
                   <!-- Ligne mot de passe -->
-                  <tr v-else class="table-row border-b border-border last:border-0 transition-colors" :class="selectedIds.has(row.item.id) ? 'row-selected' : ''">
+                  <tr
+                    v-else
+                    class="table-row border-b border-border last:border-0 transition-colors"
+                    :class="[selectedIds.has(row.item.id) ? 'row-selected' : '', highlightedId === row.item.id ? 'row-highlighted' : '']"
+                    :data-entry-id="row.item.id"
+                    @mouseenter="clearHighlight(row.item.id)"
+                  >
                     <td class="pl-3 py-2.5">
                       <input type="checkbox" class="cb" :checked="selectedIds.has(row.item.id)" @change="toggleSelect(row.item.id)" />
                     </td>
@@ -809,9 +919,8 @@ onMounted(loadAll)
               <span>/ page</span>
             </div>
           </div>
-          </div><!-- /wrapper flex-1 tableau+pagination -->
 
-          <!-- Vide (hors du wrapper table, affiché à la place du tableau) -->
+          <!-- Vide (à l'intérieur du wrapper flex-1, affiché à la place du tableau) -->
           <div v-if="!isLoading && !activeFolderId && currentFolders.length === 0 && filteredEntries.length === 0" class="flex-1 flex flex-col items-center justify-center py-20 rounded-xl border border-dashed border-border text-center">
             <div class="empty-icon w-14 h-14 rounded-2xl flex items-center justify-center mb-4">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-7 h-7 text-text-muted"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -819,6 +928,7 @@ onMounted(loadAll)
             <p class="text-text font-medium mb-1">Aucun contenu</p>
             <p class="text-text-muted text-sm">Rien dans <span class="text-text">{{ breadcrumbPath.at(-1)?.name }}</span> pour l'instant.</p>
           </div>
+          </div><!-- /wrapper flex-1 tableau+pagination -->
 
         </template>
 
@@ -942,8 +1052,6 @@ onMounted(loadAll)
 
     <AddEntryModal
       v-if="showAddModal && activeCoffreId"
-      :coffres="coffres"
-      :folders="folders"
       :default-coffre-id="activeCoffreId"
       :default-folder-id="activeFolderId ?? undefined"
       @close="showAddModal = false"
@@ -1079,6 +1187,21 @@ tr:hover .copy-btn { opacity:1; }
 
 /* Ligne sélectionnée */
 .row-selected { background: rgba(167,139,250,0.06) !important; }
+
+/* Ligne mise en surbrillance après un clic sur un résultat de recherche — reste tant que le
+   curseur ne passe pas dessus (transition-colors sur .table-row gère le fondu à la sortie) */
+.row-highlighted { background: rgba(167,139,250,0.22) !important; }
+
+/* Suggestions de recherche */
+.search-results {
+  background: rgba(18,24,31,0.97);
+  border: 1px solid rgba(31,42,53,0.9);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  backdrop-filter: blur(12px);
+}
+.search-result-item { transition: background-color 0.15s; }
+.search-result-item:hover { background: rgba(167,139,250,0.06); }
+.search-result-item:not(:last-child) { border-bottom: 1px solid rgba(31,42,53,0.6); }
 
 /* Bouton supprimer sélection */
 .delete-selection-btn {
