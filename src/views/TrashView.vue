@@ -53,6 +53,43 @@ const allTrashed = computed((): TrashedItem[] => {
   return items.sort((a, b) => b.deletedAt - a.deletedAt)
 })
 
+// ── Multi-sélection ──────────────────────────────────────────────────────────
+
+function rowKey(kind: 'entry' | 'folder', id: string): string {
+  return `${kind}-${id}`
+}
+
+const selectedKeys = ref<Set<string>>(new Set())
+
+const isAllSelected = computed(() =>
+  allTrashed.value.length > 0 && allTrashed.value.every(r => selectedKeys.value.has(rowKey(r.kind, r.id))),
+)
+
+const isIndeterminate = computed(() =>
+  allTrashed.value.some(r => selectedKeys.value.has(rowKey(r.kind, r.id))) && !isAllSelected.value,
+)
+
+function toggleSelectAll() {
+  selectedKeys.value = isAllSelected.value
+    ? new Set()
+    : new Set(allTrashed.value.map(r => rowKey(r.kind, r.id)))
+}
+
+function toggleSelect(kind: 'entry' | 'folder', id: string) {
+  const key = rowKey(kind, id)
+  const s = new Set(selectedKeys.value)
+  s.has(key) ? s.delete(key) : s.add(key)
+  selectedKeys.value = s
+}
+
+function removeFromSelection(kind: 'entry' | 'folder', id: string) {
+  const key = rowKey(kind, id)
+  if (!selectedKeys.value.has(key)) return
+  const s = new Set(selectedKeys.value)
+  s.delete(key)
+  selectedKeys.value = s
+}
+
 function coffreName(coffreId: string): string {
   return coffres.value.find(c => c.id === coffreId)?.name ?? '—'
 }
@@ -93,6 +130,7 @@ async function loadAll() {
     // Affiche uniquement les éléments de premier niveau (pas les enfants de cascade)
     trashedEntries.value = allEntries.filter(e => !e.cascadeDeletedBy && e.deletedAt + THIRTY_DAYS >= now)
     trashedFolders.value = allFolders.filter(f => !f.cascadeDeletedBy && f.deletedAt + THIRTY_DAYS >= now)
+    selectedKeys.value = new Set()
   } catch (err) {
     console.error('Erreur chargement corbeille :', err)
   } finally {
@@ -118,6 +156,7 @@ function handleRestore(kind: 'entry' | 'folder', id: string, name: string) {
         ])
         trashedFolders.value = trashedFolders.value.filter(f => f.id !== id)
       }
+      removeFromSelection(kind, id)
     },
   )
 }
@@ -140,6 +179,51 @@ function handlePermanentDelete(kind: 'entry' | 'folder', id: string, name: strin
         ])
         trashedFolders.value = trashedFolders.value.filter(f => f.id !== id)
       }
+      removeFromSelection(kind, id)
+    },
+  )
+}
+
+function handleRestoreSelected() {
+  const rows = allTrashed.value.filter(r => selectedKeys.value.has(rowKey(r.kind, r.id)))
+  const count = rows.length
+  askConfirm(
+    'Restaurer les éléments',
+    `Restaurer ${count} élément${count > 1 ? 's' : ''} ? Le contenu des dossiers sélectionnés sera également restauré.`,
+    'Restaurer',
+    'restore',
+    async () => {
+      await Promise.all(rows.map(row => row.kind === 'entry'
+        ? restoreEntry(row.id)
+        : Promise.all([restoreFolder(row.id), restoreFolderCascadeByFolder(row.id), restoreEntryCascadeByFolder(row.id)]),
+      ))
+      const entryIds = new Set(rows.filter(r => r.kind === 'entry').map(r => r.id))
+      const folderIds = new Set(rows.filter(r => r.kind === 'folder').map(r => r.id))
+      trashedEntries.value = trashedEntries.value.filter(e => !entryIds.has(e.id))
+      trashedFolders.value = trashedFolders.value.filter(f => !folderIds.has(f.id))
+      selectedKeys.value = new Set()
+    },
+  )
+}
+
+function handlePermanentDeleteSelected() {
+  const rows = allTrashed.value.filter(r => selectedKeys.value.has(rowKey(r.kind, r.id)))
+  const count = rows.length
+  askConfirm(
+    'Suppression définitive',
+    `Supprimer définitivement ${count} élément${count > 1 ? 's' : ''} ? Cette action est irréversible.`,
+    'Supprimer définitivement',
+    'danger',
+    async () => {
+      await Promise.all(rows.map(row => row.kind === 'entry'
+        ? permanentlyDeleteEntry(row.id)
+        : Promise.all([permanentlyDeleteFolder(row.id), permanentlyDeleteFolderCascadeByFolder(row.id), permanentlyDeleteEntryCascadeByFolder(row.id)]),
+      ))
+      const entryIds = new Set(rows.filter(r => r.kind === 'entry').map(r => r.id))
+      const folderIds = new Set(rows.filter(r => r.kind === 'folder').map(r => r.id))
+      trashedEntries.value = trashedEntries.value.filter(e => !entryIds.has(e.id))
+      trashedFolders.value = trashedFolders.value.filter(f => !folderIds.has(f.id))
+      selectedKeys.value = new Set()
     },
   )
 }
@@ -239,6 +323,26 @@ onMounted(loadAll)
           <span class="text-xl font-bold text-text">Corbeille</span>
         </div>
 
+        <!-- Barre d'actions groupées -->
+        <div v-if="selectedKeys.size > 0" class="bulk-bar flex items-center gap-3 px-4 py-2.5 rounded-lg">
+          <span class="text-xs text-text-muted">{{ selectedKeys.size }} sélectionné{{ selectedKeys.size > 1 ? 's' : '' }}</span>
+          <div class="flex items-center gap-2 ml-auto">
+            <button class="restore-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium" @click="handleRestoreSelected">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                <path d="M3 3v5h5"/>
+              </svg>
+              Restaurer
+            </button>
+            <button class="delete-selection-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium" @click="handlePermanentDeleteSelected">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+              </svg>
+              Supprimer définitivement
+            </button>
+          </div>
+        </div>
+
         <!-- Loading -->
         <div v-if="isLoading" class="flex items-center gap-3 text-text-muted text-sm py-16 justify-center">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin w-4 h-4"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
@@ -250,6 +354,15 @@ onMounted(loadAll)
           <table class="w-full text-sm">
             <thead>
               <tr class="table-head border-b border-border text-left">
+                <th class="px-4 py-3 w-8">
+                  <input
+                    type="checkbox"
+                    class="cb"
+                    :checked="isAllSelected"
+                    :ref="(el) => { if (el) (el as HTMLInputElement).indeterminate = isIndeterminate }"
+                    @change="toggleSelectAll"
+                  />
+                </th>
                 <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider w-8"></th>
                 <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Nom</th>
                 <th class="px-4 py-3 text-xs font-medium text-text-muted uppercase tracking-wider">Coffre</th>
@@ -263,7 +376,18 @@ onMounted(loadAll)
                 v-for="row in allTrashed"
                 :key="row.kind + '-' + row.id"
                 class="table-row border-b border-border last:border-0 transition-colors"
+                :class="selectedKeys.has(rowKey(row.kind, row.id)) ? 'row-selected' : ''"
               >
+                <!-- Case à cocher -->
+                <td class="px-4 py-3.5">
+                  <input
+                    type="checkbox"
+                    class="cb"
+                    :checked="selectedKeys.has(rowKey(row.kind, row.id))"
+                    @change="toggleSelect(row.kind, row.id)"
+                  />
+                </td>
+
                 <!-- Icône type -->
                 <td class="px-4 py-3.5">
                   <div v-if="row.kind === 'folder'" class="folder-icon w-7 h-7 rounded-lg flex items-center justify-center shrink-0">
@@ -411,4 +535,64 @@ onMounted(loadAll)
 .confirm-icon-restore { background: rgba(167,139,250,0.1); border: 1px solid rgba(167,139,250,0.2); color: var(--color-accent); }
 .restore-confirm-btn { background: linear-gradient(135deg,#A78BFA 0%,#7C3AED 100%); color:white; box-shadow: 0 0 16px rgba(167,139,250,0.2); transition: box-shadow 0.2s; }
 .restore-confirm-btn:not(:disabled):hover { box-shadow: 0 0 24px rgba(167,139,250,0.35); }
+
+/* Checkboxes */
+.cb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.25rem;
+  border: 1.5px solid rgba(167,139,250,0.3);
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s, border-color 0.15s;
+  display: block;
+  flex-shrink: 0;
+}
+.cb:hover { border-color: rgba(167,139,250,0.6); }
+.cb:checked { background: #A78BFA; border-color: #A78BFA; }
+.cb:checked::after {
+  content: '';
+  display: block;
+  width: 0.35rem;
+  height: 0.6rem;
+  border: 2px solid white;
+  border-top: none;
+  border-left: none;
+  transform: rotate(45deg) translate(1px, -1px);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin-top: -0.38rem;
+  margin-left: -0.18rem;
+}
+.cb:indeterminate { background: rgba(167,139,250,0.4); border-color: #A78BFA; }
+.cb:indeterminate::after {
+  content: '';
+  display: block;
+  width: 0.5rem;
+  height: 2px;
+  background: white;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Ligne sélectionnée */
+.row-selected { background: rgba(167,139,250,0.06) !important; }
+
+/* Barre d'actions groupées */
+.bulk-bar { background: rgba(167,139,250,0.06); border: 1px solid rgba(167,139,250,0.15); }
+
+/* Bouton supprimer sélection */
+.delete-selection-btn {
+  background: rgba(248,113,113,0.1);
+  border: 1px solid rgba(248,113,113,0.25);
+  color: #f87171;
+  transition: background 0.15s, border-color 0.15s;
+}
+.delete-selection-btn:hover { background: rgba(248,113,113,0.18); border-color: rgba(248,113,113,0.4); }
 </style>

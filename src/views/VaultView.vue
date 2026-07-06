@@ -279,6 +279,16 @@ const coffreEntryCount = computed(() => {
   return counts
 })
 
+// Entrées totales dans un dossier, sous-dossiers inclus (pour le badge)
+const folderEntryCount = computed(() => {
+  const counts: Record<string, number> = {}
+  for (const folder of folders.value) {
+    const ids = new Set([folder.id, ...getDescendantFolderIds(folder.id)])
+    counts[folder.id] = entries.value.filter(e => e.folderId && ids.has(e.folderId)).length
+  }
+  return counts
+})
+
 // ── Actions ──────────────────────────────────────────────────────────────────
 
 async function loadAll() {
@@ -783,10 +793,11 @@ onMounted(loadAll)
                     </td>
                     <td colspan="4" class="px-4 py-2.5">
                       <div class="flex items-center gap-3">
-                        <div class="folder-avatar w-8 h-8 rounded-lg flex items-center justify-center shrink-0">
+                        <div class="folder-avatar relative w-8 h-8 rounded-lg flex items-center justify-center shrink-0">
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
                             <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>
                           </svg>
+                          <span v-if="folderEntryCount[row.item.id]" class="folder-badge absolute -top-1.5 -right-1.5">{{ folderEntryCount[row.item.id] }}</span>
                         </div>
                         <span class="font-medium text-text">{{ row.item.name }}</span>
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 text-border ml-auto mr-2 shrink-0"><path d="m9 18 6-6-6-6"/></svg>
@@ -1117,6 +1128,7 @@ onMounted(loadAll)
 .back-row:hover { background: rgba(255,255,255,0.03); }
 .folder-row:hover { background: rgba(167,139,250,0.04); }
 .folder-avatar { background: rgba(167,139,250,0.08); border: 1px solid rgba(167,139,250,0.15); color: var(--color-accent); }
+.folder-badge { min-width: 1.1rem; height: 1.1rem; padding: 0 0.3rem; border-radius: 999px; background: var(--color-accent); color: #0A0E12; font-size: 0.625rem; font-weight: 600; display: flex; align-items: center; justify-content: center; line-height: 1; border: 1px solid rgba(10,14,18,0.9); }
 .entry-avatar { background: linear-gradient(135deg,rgba(167,139,250,0.15),rgba(124,58,237,0.1)); border: 1px solid rgba(167,139,250,0.2); color: var(--color-accent); }
 .copy-btn { opacity:0; transition: opacity 0.15s, color 0.15s; }
 tr:hover .copy-btn { opacity:1; }
