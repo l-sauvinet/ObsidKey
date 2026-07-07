@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { Key } from '@lucide/vue'
 import { logOut } from '@/services/auth'
 import { useVaultStore } from '@/stores/vault'
-import { getAllEntries, addEntry, updateEntry, deleteEntry, permanentlyDeleteEntry, type VaultEntry } from '@/services/vaultEntries'
+import { getAllEntries, updateEntry, deleteEntry, permanentlyDeleteEntry, type VaultEntry } from '@/services/vaultEntries'
 import { getAllCoffres, addCoffre, deleteCoffre, type VaultCoffre } from '@/services/vaultCoffres'
 import { getAllFolders, addFolder, updateFolder, deleteFolder, permanentlyDeleteFolder, type VaultFolder } from '@/services/vaultFolders'
 import AddEntryModal from '@/components/AddEntryModal.vue'
@@ -43,7 +43,6 @@ async function handleMoveFolder(targetFolderId: string | null) {
   await loadAll()
   movingFolder.value = null
 }
-const revealedIds = ref<Set<string>>(new Set())
 const copiedId = ref<string | null>(null)
 const search = ref('')
 
@@ -56,20 +55,6 @@ watch(activeFolderId, v => v ? sessionStorage.setItem('obsidkey_folder', v) : se
 // ── Computed ─────────────────────────────────────────────────────────────────
 
 const activeCoffre = computed(() => coffres.value.find(c => c.id === activeCoffreId.value))
-
-const coffreFolders = computed(() =>
-  folders.value.filter(f => f.coffreId === activeCoffreId.value),
-)
-
-type FolderNode = VaultFolder & { depth: number }
-
-function buildFolderTree(parentId: string | undefined, depth: number): FolderNode[] {
-  return coffreFolders.value
-    .filter(f => f.parentId === parentId)
-    .flatMap(f => [{ ...f, depth }, ...buildFolderTree(f.id, depth + 1)])
-}
-
-const folderTree = computed(() => buildFolderTree(undefined, 0))
 
 const breadcrumbPath = computed(() => {
   const parts: Array<{ name: string; folderId: string | null }> = []
@@ -381,19 +366,12 @@ function handleDeleteCoffre(id: string) {
   )
 }
 
-function toggleReveal(id: string) {
-  const s = new Set(revealedIds.value)
-  s.has(id) ? s.delete(id) : s.add(id)
-  revealedIds.value = s
-}
-
 async function copyText(text: string, id: string) {
   await navigator.clipboard.writeText(text)
   copiedId.value = id
   setTimeout(() => (copiedId.value = null), 1500)
 }
 
-function avatarLetter(title: string) { return title.trim()[0]?.toUpperCase() ?? '?' }
 function handleLock() { vault.lock(); router.push({ name: 'unlock' }) }
 async function handleLogout() { await logOut(); router.push({ name: 'login' }) }
 

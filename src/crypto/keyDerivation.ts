@@ -32,7 +32,7 @@ export async function deriveEncryptionKeyRaw(
     hashLength: 32,
     outputType: 'binary',
   })
-  return hash.buffer.slice(hash.byteOffset, hash.byteOffset + hash.byteLength)
+  return hash.buffer.slice(hash.byteOffset, hash.byteOffset + hash.byteLength) as ArrayBuffer
 }
 
 /**

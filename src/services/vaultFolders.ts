@@ -71,7 +71,7 @@ export async function getTrashedFolders(): Promise<VaultFolderTrashed[]> {
 export async function updateFolder(id: string, name: string, coffreId: string, parentId?: string): Promise<void> {
   const key = requireKey()
   const payload = await encryptString(JSON.stringify({ name, coffreId, parentId }), key)
-  await updateDoc(doc(db, 'vaults', requireUserId(), 'folders', id), payload)
+  await updateDoc(doc(db, 'vaults', requireUserId(), 'folders', id), payload as { [key: string]: any })
 }
 
 export async function addFolder(name: string, coffreId: string, parentId?: string): Promise<VaultFolder> {
