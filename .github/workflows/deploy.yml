@@ -2,7 +2,7 @@ name: Deploy to o2switch
 
 on:
   push:
-    branches: [ main ]   # remplace par master si besoin
+    branches: [ master ]   # remplace par master si besoin
 
 jobs:
   build-and-deploy:
