@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Politique de confidentialité — ObsidKey</title>
+    <meta
+      name="description"
+      content="Politique de confidentialité d'ObsidKey et de son extension navigateur."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0a0e12;
+        --surface: #12181f;
+        --border: #1f2a35;
+        --text: #e4e9ef;
+        --muted: #7c8a99;
+        --accent: #a78bfa;
+        --danger: #ff6b6b;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, system-ui, sans-serif;
+        line-height: 1.65;
+        padding: 48px 20px 80px;
+      }
+      main { max-width: 720px; margin: 0 auto; }
+      header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+      .logo { width: 26px; height: 26px; }
+      .brand { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+      .brand span { color: var(--accent); }
+      h1 { font-size: 26px; font-weight: 700; margin: 22px 0 6px; letter-spacing: -0.01em; }
+      .updated { color: var(--muted); font-size: 13px; margin-bottom: 36px; }
+      h2 {
+        font-size: 15px; font-weight: 600; margin: 34px 0 10px;
+        text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent);
+      }
+      p { margin-bottom: 12px; }
+      ul { margin: 0 0 12px 20px; }
+      li { margin-bottom: 8px; }
+      strong { color: var(--text); font-weight: 600; }
+      a { color: var(--accent); }
+      .callout {
+        margin: 16px 0; padding: 14px 16px; border-radius: 10px;
+        background: rgba(255, 107, 107, 0.07);
+        border: 1px solid rgba(255, 107, 107, 0.2);
+      }
+      .callout p { margin: 0; color: var(--danger); font-size: 14px; }
+      footer {
+        margin-top: 48px; padding-top: 20px;
+        border-top: 1px solid var(--border);
+        color: var(--muted); font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <svg class="logo" viewBox="0 0 82 134" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path
+            d="M60.4473 46.8018L71.3213 88.8486L57.5635 113.742L39.917 122.28L18.4414 109.156L10.5527 80.2305L30.1455 33.5107L40.9229 17.7939L60.4473 46.8018Z"
+            stroke="#A78BFA"
+            stroke-width="20"
+          />
+        </svg>
+        <span class="brand">Obsid<span>Key</span></span>
+      </header>
+
+      <h1>Politique de confidentialité</h1>
+      <p class="updated">Dernière mise à jour : 14 août 2026</p>
+
+      <h2>1. Principe</h2>
+      <p>
+        ObsidKey est un gestionnaire de mots de passe <strong>zero-knowledge</strong>. L'éditeur
+        n'a aucun accès au contenu des coffres de ses utilisateurs, ni aucun moyen technique d'en
+        obtenir. Cette politique couvre l'application web et l'extension navigateur.
+      </p>
+
+      <h2>2. Données traitées</h2>
+      <p>Les données suivantes sont traitées, exclusivement pour le fonctionnement du service :</p>
+      <ul>
+        <li>
+          <strong>Adresse e-mail</strong> — transmise au service d'authentification pour
+          identifier le compte.
+        </li>
+        <li>
+          <strong>Mot de passe maître</strong> — il ne quitte jamais votre appareil. Seul un hash
+          dérivé par PBKDF2 (600 000 itérations) est transmis au service d'authentification. Ce
+          hash ne permet pas de déchiffrer les données du coffre.
+        </li>
+        <li>
+          <strong>Contenu du coffre</strong> — titres, identifiants, mots de passe, URL et
+          dossiers. Ces données sont stockées chiffrées en AES-256-GCM et déchiffrées uniquement
+          dans votre navigateur, avec une clé dérivée de votre mot de passe maître par Argon2id.
+        </li>
+        <li>
+          <strong>Nom de domaine de l'onglet actif</strong> (extension uniquement) — lu à
+          l'ouverture du popup pour identifier les entrées correspondant au site consulté. Il
+          n'est ni stocké, ni transmis.
+        </li>
+      </ul>
+
+      <h2>3. Ce qui n'est pas fait</h2>
+      <ul>
+        <li>Aucune télémétrie, aucune statistique d'usage, aucune donnée analytique.</li>
+        <li>Aucun traqueur, aucune publicité.</li>
+        <li>
+          Aucune transmission à un tiers, hors les services Google Firebase strictement
+          nécessaires (Authentication, Firestore, rafraîchissement de jeton).
+        </li>
+        <li>
+          Aucune lecture ni modification du contenu des pages visitées : l'extension n'injecte
+          aucun script dans les pages.
+        </li>
+        <li>Aucune vente ni cession de données, en aucune circonstance.</li>
+      </ul>
+
+      <h2>4. Conservation</h2>
+      <p>
+        Dans l'application web, la clé de déchiffrement vit dans l'onglet et disparaît à sa
+        fermeture. Dans l'extension, la session déverrouillée est conservée en
+        <strong>mémoire vive uniquement</strong> et jamais sur le disque : elle est effacée à la
+        fermeture du navigateur, après 4 heures, ou lors d'un verrouillage manuel.
+      </p>
+      <p>
+        Les données chiffrées du coffre sont conservées jusqu'à leur suppression par
+        l'utilisateur.
+      </p>
+
+      <h2>5. Sous-traitants</h2>
+      <p>
+        Google Cloud (Firebase Authentication et Cloud Firestore) héberge les données chiffrées et
+        assure l'authentification. Google n'a pas accès au contenu déchiffré des coffres.
+      </p>
+
+      <h2>6. Vos droits</h2>
+      <p>
+        Vous pouvez à tout moment consulter, modifier ou supprimer vos données depuis
+        l'application web. La suppression d'un compte entraîne celle de toutes ses données.
+      </p>
+      <div class="callout">
+        <p>
+          En raison du chiffrement zero-knowledge, la perte du mot de passe maître entraîne la
+          perte définitive et irrécupérable du contenu du coffre. Personne, éditeur inclus, ne
+          peut le restaurer.
+        </p>
+      </div>
+
+      <h2>7. Contact</h2>
+      <p>
+        Pour toute question relative à cette politique :
+        <a href="mailto:CONTACT@EXEMPLE.COM">CONTACT@EXEMPLE.COM</a>
+      </p>
+
+      <footer>ObsidKey — <a href="/">retour à l'application</a></footer>
+    </main>
+  </body>
+</html>
