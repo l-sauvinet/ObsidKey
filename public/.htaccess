@@ -2,6 +2,10 @@ RewriteEngine On
 RewriteCond %{HTTPS} off
 RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
+# Politique de confidentialité : page statique, accessible sans connexion. Doit passer AVANT
+# le repli SPA, sinon /privacy (sans extension) atterrit sur l'app et donc sur l'écran de login.
+RewriteRule ^privacy/?$ /privacy.html [L]
+
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule . /index.html [L]
